@@ -1,7 +1,21 @@
 plugins {
-    alias(libs.plugins.android.application)
+    alias(libs.plugins.androidLibrary)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    id("maven-publish")
+}
+
+afterEvaluate {
+    publishing {
+        publications {
+            create<MavenPublication>("release") {
+                from(components["release"])
+                groupId = "ir.ahe.abbas"
+                artifactId = "liteCompose"
+                version = "1.0.0"
+            }
+        }
+    }
 }
 
 android {
@@ -9,11 +23,9 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "ir.ahe.abbas.library"
         minSdk = 21
-        targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+//        versionCode = 1
+  //      versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
