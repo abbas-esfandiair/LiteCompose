@@ -96,7 +96,7 @@ Add the library dependency to your project:
 
 ```gradle
 dependencies {
-    implementation "com.github.abbas7777:LiteCompose:1.0.0"
+    implementation "com.github.abbas-esfandiari:LiteCompose:1.0.0"
 }
 ```
 
