@@ -12,7 +12,7 @@ afterEvaluate {
                 from(components["release"])
                 groupId = "ir.ahe.abbas"
                 artifactId = "liteCompose"
-                version = "1.0.0"
+                version = "1.0.1"
             }
         }
     }
@@ -24,9 +24,6 @@ android {
 
     defaultConfig {
         minSdk = 21
-//        versionCode = 1
-  //      versionName = "1.0"
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

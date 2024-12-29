@@ -21,4 +21,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "LiteCompose"
 include(":app")
-include(":library")
+include(":litecompose")
