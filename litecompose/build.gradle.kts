@@ -12,7 +12,7 @@ afterEvaluate {
                 from(components["release"])
                 groupId = "ir.ahe.abbas"
                 artifactId = "liteCompose"
-                version = libs.versions.libraryVersion
+                version = "${libs.versions.libraryVersion}"
             }
         }
     }
