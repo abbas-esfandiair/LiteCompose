@@ -12,6 +12,7 @@ import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.MeasurePolicy
 import androidx.compose.ui.layout.MeasureResult
 import androidx.compose.ui.layout.MeasureScope
+import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -59,55 +60,170 @@ private class LiteRowMeasurePolicy(
         constraints: Constraints
     ): MeasureResult {
         val spaceAsPx = spaceBetweenItem.toPx().toInt()
-        val alignments = arrayOfNulls<LiteRowChildDataNode>(measurables.size)
-
+        val alignments = arrayOfNulls<LiteRowChildData>(measurables.size)
         val availableWidth = constraints.maxWidth
-        var usedWidth = 0
-        val minSizeComponent = 0
-        val placeables = Array(measurables.size) { index ->
-            alignments[index] = measurables[index].liteRowChildDataNode
-            val remainingWidth =
-                availableWidth - usedWidth - ((measurables.size - 1 - index) * spaceAsPx)
 
-            val adjustedConstraints = constraints.copy(
-                minWidth = minSizeComponent,
-                maxWidth = remainingWidth.coerceIn(minSizeComponent, constraints.maxWidth)
-            )
-            val placeable = measurables[index].measure(adjustedConstraints)
-            usedWidth += placeable.width + spaceAsPx
-            placeable
+        val hasWeightedChild = measurables.any {
+            it.liteRowChildDataNode?.weight?.let { weight ->
+                weight > 0f
+            } ?: false
         }
+        if (!hasWeightedChild) {
 
-        val totalWidth = usedWidth - spaceAsPx.coerceAtLeast(0)
-        val totalHeight = placeables.maxOfOrNull { it.height } ?: 0
+            var usedWidth = 0
+            val placeables = Array(measurables.size) { index ->
+                alignments[index] = measurables[index].liteRowChildDataNode
+                val remainingWidth =
+                    availableWidth - usedWidth - ((measurables.size - 1 - index) * spaceAsPx)
+                val adjustedConstraints = constraints.copy(
+                    minWidth = 0,
+                    maxWidth = remainingWidth.coerceIn(0, constraints.maxWidth)
+                )
+                val placeable = measurables[index].measure(adjustedConstraints)
+                usedWidth += placeable.width + spaceAsPx
+                placeable
+            }
+            val totalWidth = usedWidth - spaceAsPx.coerceAtLeast(0)
+            val totalHeight = placeables.maxOfOrNull { it.height } ?: 0
 
-        var xPosition = 0
+            var xPosition = 0
+            return layout(
+                totalWidth.coerceIn(constraints.minWidth, constraints.maxWidth),
+                totalHeight
+            ) {
+                for (index in placeables.indices) {
+                    val alignment = alignments.getOrNull(index)
+                    val placeable = placeables.getOrNull(index) ?: continue
+                    val targetVerticalAlignment =
+                        alignment?.verticalAlignment ?: verticalAlignmentParent
+                    val yPosition = when (targetVerticalAlignment) {
+                        VerticalAlignment.Top -> 0
+                        VerticalAlignment.Center -> (totalHeight - placeable.height) / 2
+                        VerticalAlignment.Bottom -> totalHeight - placeable.height
+                    }
+                    val targetHorizontalAlignment =
+                        alignment?.horizontalAlignment ?: horizontalAlignmentParent
 
-        return layout(
-            totalWidth.coerceIn(constraints.minWidth, constraints.maxWidth),
-            totalHeight
-        ) {
-            for (index in placeables.indices) {
-                val alignment = alignments.getOrNull(index)
-                val placeable = placeables.getOrNull(index) ?: continue
-                val targetVerticalAlignment =
-                    alignment?.verticalAlignment ?: verticalAlignmentParent
+                    val xPositionAdjusted = when (targetHorizontalAlignment) {
+                        HorizontalAlignment.Start -> xPosition
+                        HorizontalAlignment.Center -> {
+                            if (!constraints.hasFixedWidth) {
+                                xPosition
+                            } else {
+                                (constraints.maxWidth - totalWidth) / 2 + xPosition
+                            }
+                        }
 
-                val yPosition = when (targetVerticalAlignment) {
-                    VerticalAlignment.Top -> 0
-                    VerticalAlignment.Center -> (totalHeight - placeable.height) / 2
-                    VerticalAlignment.Bottom -> totalHeight - placeable.height
+                        HorizontalAlignment.End -> {
+                            if (!constraints.hasFixedWidth) {
+                                xPosition
+                            } else {
+                                constraints.maxWidth - totalWidth + xPosition
+                            }
+                        }
+                    }
+                    placeable.placeRelative(x = xPositionAdjusted, y = yPosition)
+                    xPosition += placeable.width + spaceAsPx
                 }
-                val targetHorizontalAlignment =
-                    alignment?.horizontalAlignment ?: horizontalAlignmentParent
+            }
+        } else {
+            val count = measurables.size
+            val placeables = arrayOfNulls<Placeable>(count)
+            val totalSpacing = (count - 1) * spaceAsPx
 
-                val xPositionAdjusted = when (targetHorizontalAlignment) {
-                    HorizontalAlignment.Start -> xPosition
-                    HorizontalAlignment.Center -> (constraints.maxWidth - totalWidth) / 2 + xPosition
-                    HorizontalAlignment.End -> constraints.maxWidth - totalWidth + xPosition
+            var usedWidthNonWeighted = 0
+            val weightedIndices = mutableListOf<Int>()
+            for (i in 0 until count) {
+                val childData = measurables[i].liteRowChildDataNode
+                alignments[i] = childData
+                if ((childData?.weight ?: 0f) > 0f) {
+                    weightedIndices.add(i)
+                } else {
+                    val remainingCount = count - i - 1
+                    val remainingWidth =
+                        availableWidth - usedWidthNonWeighted - (remainingCount * spaceAsPx)
+                    val adjustedConstraints = constraints.copy(
+                        minWidth = 0,
+                        maxWidth = remainingWidth.coerceIn(0, constraints.maxWidth)
+                    )
+                    val placeable = measurables[i].measure(adjustedConstraints)
+                    placeables[i] = placeable
+                    usedWidthNonWeighted += placeable.width + spaceAsPx
                 }
-                placeable.placeRelative(x = xPositionAdjusted, y = yPosition)
-                xPosition += placeable.width + spaceAsPx
+            }
+
+            var totalNonWeightedWidth = 0
+            for (i in 0 until count) {
+                if ((measurables[i].liteRowChildDataNode?.weight ?: 0f) <= 0f) {
+                    totalNonWeightedWidth += placeables[i]?.width ?: 0
+                }
+            }
+
+            val remainingWidthForWeighted =
+                (availableWidth - totalNonWeightedWidth - totalSpacing).coerceAtLeast(0)
+            val totalWeight = weightedIndices.sumOf {
+                measurables[it].liteRowChildDataNode?.weight?.toDouble() ?: 0.0
+            }
+                .toFloat()
+
+            for (i in weightedIndices) {
+                val weight = measurables[i].liteRowChildDataNode?.weight ?: 0f
+                val allocatedWidth = if (totalWeight > 0f) {
+                    (remainingWidthForWeighted * (weight / totalWeight)).toInt()
+                } else 0
+                val fill = measurables[i].liteRowChildDataNode?.fill ?: true
+                val childConstraints = if (fill) {
+                    constraints.copy(minWidth = allocatedWidth, maxWidth = allocatedWidth)
+                } else {
+                    constraints.copy(minWidth = 0, maxWidth = allocatedWidth)
+                }
+                val placeable = measurables[i].measure(childConstraints)
+                placeables[i] = placeable
+            }
+
+            val measuredWidths = placeables.map { it?.width ?: 0 }
+            val totalWidth = measuredWidths.sum() + totalSpacing
+            val totalHeight = placeables.maxOfOrNull { it?.height ?: 0 } ?: 0
+
+            var xPosition = 0
+            return layout(
+                totalWidth.coerceIn(constraints.minWidth, constraints.maxWidth),
+                totalHeight
+            ) {
+                for (index in 0 until count) {
+                    val childData = alignments[index]
+                    val placeable = placeables.getOrNull(index) ?: continue
+                    val targetVerticalAlignment =
+                        childData?.verticalAlignment ?: verticalAlignmentParent
+                    val yPosition = when (targetVerticalAlignment) {
+                        VerticalAlignment.Top -> 0
+                        VerticalAlignment.Center -> (totalHeight - placeable.height) / 2
+                        VerticalAlignment.Bottom -> totalHeight - placeable.height
+                    }
+                    val targetHorizontalAlignment =
+                        childData?.horizontalAlignment ?: horizontalAlignmentParent
+
+                    val xPositionAdjusted = when (targetHorizontalAlignment) {
+                        HorizontalAlignment.Start -> xPosition
+                        HorizontalAlignment.Center -> {
+                            if (!constraints.hasFixedWidth) {
+                                xPosition
+                            } else {
+                                (constraints.maxWidth - totalWidth) / 2 + xPosition
+                            }
+                        }
+
+                        HorizontalAlignment.End -> {
+                            if (!constraints.hasFixedWidth) {
+                                xPosition
+                            } else {
+                                constraints.maxWidth - totalWidth + xPosition
+                            }
+                        }
+                    }
+                    placeable.placeRelative(x = xPositionAdjusted, y = yPosition)
+                    xPosition += placeable.width + spaceAsPx
+                }
             }
         }
     }
@@ -116,24 +232,22 @@ private class LiteRowMeasurePolicy(
         measurables: List<IntrinsicMeasurable>,
         width: Int
     ): Int {
-        return measurables.fastMaxOfOrNull { maxIntrinsicHeightLambda(it, width) } ?: 0
+        return measurables.fastMaxOfOrNull { it.maxIntrinsicHeightLambda(width) } ?: 0
     }
 
     override fun IntrinsicMeasureScope.minIntrinsicHeight(
         measurables: List<IntrinsicMeasurable>,
         width: Int
     ): Int {
-        return measurables.fastMaxOfOrNull { minIntrinsicHeightLambda(it, width) } ?: 0
+        return measurables.fastMaxOfOrNull { it.minIntrinsicHeightLambda(width) } ?: 0
     }
 
     override fun IntrinsicMeasureScope.maxIntrinsicWidth(
         measurables: List<IntrinsicMeasurable>,
         height: Int
     ): Int {
-        val childWidths = measurables.fastMap { maxIntrinsicWidthLambda(it, height) }
-
+        val childWidths = measurables.fastMap { it.maxIntrinsicWidthLambda(height) }
         val totalGapWidth = (childWidths.size - 1).coerceAtLeast(0) * spaceBetweenItem.roundToPx()
-
         return childWidths.sum() + totalGapWidth
     }
 
@@ -141,10 +255,8 @@ private class LiteRowMeasurePolicy(
         measurables: List<IntrinsicMeasurable>,
         height: Int
     ): Int {
-        val childWidths = measurables.fastMap { minIntrinsicWidthLambda(it, height) }
-
+        val childWidths = measurables.fastMap { it.minIntrinsicWidthLambda(height) }
         val totalGapWidth = (childWidths.size - 1).coerceAtLeast(0) * spaceBetweenItem.roundToPx()
-
         return childWidths.sum() + totalGapWidth
     }
 }
@@ -153,3 +265,4 @@ private val maxIntrinsicWidthLambda: IntrinsicMeasurable.(Int) -> Int = { maxInt
 private val minIntrinsicWidthLambda: IntrinsicMeasurable.(Int) -> Int = { minIntrinsicWidth(it) }
 private val maxIntrinsicHeightLambda: IntrinsicMeasurable.(Int) -> Int = { maxIntrinsicHeight(it) }
 private val minIntrinsicHeightLambda: IntrinsicMeasurable.(Int) -> Int = { minIntrinsicHeight(it) }
+
